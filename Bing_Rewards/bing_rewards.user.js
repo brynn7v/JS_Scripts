@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bing Rewards每日脚本
 // @namespace    http://tampermonkey.net/
-// @version      2.8
+// @version      2.9
 // @description  获取自建热词接口并进行搜索
 // @author       ぶりん
 // @match        https://*.bing.com/*
@@ -16,14 +16,13 @@
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_xmlhttpRequest
-// @downloadURL  https://github.com/brynn7v/JS_Scripts/blob/main/Bing_Rewards/bing_rewards.user.js
+// @downloadURL  https://github.com/brynn7v/JS_Scripts/raw/refs/main/Bing_Rewards/bing_rewards.user.js
 // @updateURL    https://raw.githubusercontent.com/brynn7v/JS_Scripts/blob/main/Bing_Rewards/bing_rewards.user.js
 // ==/UserScript==
 
 const max_rewards = 35;
 const pause_time = 2;
 const API = "http://8.134.117.11:8000/api/hot";
-// const API = "https://bing.by-fire.top/api/hot"
 
 let search_words = []
 
