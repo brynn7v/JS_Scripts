@@ -138,7 +138,7 @@ let startCDMenu = GM_registerMenuCommand('Start_CD', function(){
 
 // 停止搜索
 let stopMenu = GM_registerMenuCommand('Stop', function(){
-    GM_setValue('currentIndex', max_rewards + 10);
+    GM_setValue('currentIndex', max_rewards);
     GM_setValue('cd', 0);
     GM_setValue('word_list', null);
 }, 'x');
@@ -230,10 +230,22 @@ function updateFloatDiv(mode, currentIndex, maxRewards, sleepTime, earnedPoints)
     let parentDiv = createFloatDiv();
     parentDiv.innerHTML = `
         <div style="font-weight: bold; margin-bottom: 8px; color: #4CAF50;">🎯 Bing Rewards 自动脚本</div>
-        <div>📊 模式: <span style="color: #FFD700;">${mode}</span></div>
-        <div>📈 进度: <span style="color: #87CEEB;">${currentIndex} / ${maxRewards}</span></div>
-        <div>⏰ 休眠: <span style="color: #FFA500;">${sleepTime}</span></div>
-        <div>💰 已获得: <span style="color: #90EE90;">${earnedPoints || 0} 分</span></div>
+        <div style="display: flex; justify-content: space-between;">
+            <span>📊 模式:</span>
+            <span style="color: #FFD700;">${mode}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+            <span>📈 进度:</span>
+            <span style="color: #87CEEB;">${currentIndex} / ${maxRewards}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+            <span>⏰ 休眠:</span>
+            <span style="color: #FFA500;">${sleepTime}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+            <span>💰 已获得:</span>
+            <span style="color: #90EE90;">${earnedPoints || 0} 分</span>
+        </div>
     `;
 }
 
