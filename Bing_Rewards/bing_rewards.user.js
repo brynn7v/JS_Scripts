@@ -16,6 +16,8 @@
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_xmlhttpRequest
+// @downloadURL  https://github.com/brynn7v/JS_Scripts/blob/main/Bing_Rewards/bing_rewards.user.js
+// @updateURL    https://raw.githubusercontent.com/brynn7v/JS_Scripts/blob/main/Bing_Rewards/bing_rewards.user.js
 // ==/UserScript==
 
 const max_rewards = 35;
