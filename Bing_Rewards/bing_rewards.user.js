@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bing Rewards每日脚本
 // @namespace    http://tampermonkey.net/
-// @version      2.9
+// @version      2.10
 // @description  获取自建热词接口并进行搜索
 // @author       ぶりん
 // @match        https://*.bing.com/*
@@ -63,19 +63,26 @@ function get_keywords_list(callback) {
                     GM_setValue('word_list', JSON.stringify(search_words));
                     if (callback) callback();
                 } catch (e) {
-                    console.error('数据解析失败:', e.message);
-                    alert('API数据格式异常，请检查接口');
+                    console.error('数据解析失败:', e);
+                    // 不要显示alert，只记录错误
+                    console.warn('API数据格式异常，使用备选数据');
                     // 使用缓存数据或默认关键词作为备选
                     if (gm_word_list.length > 0) {
                         search_words = gm_word_list;
                         console.log('使用缓存数据作为备选');
                         if (callback) callback();
+                    } else {
+                        // 使用默认关键词
+                        search_words = ['新闻', '科技', '体育', '娱乐', '财经', '汽车', '房产', '旅游', '教育', '健康'];
+                        console.log('使用默认关键词');
+                        if (callback) callback();
                     }
                 }
             },
             onerror: function(error) {
-                console.error('API请求失败:', error.message);
-                alert('无法连接到热点数据接口');
+                console.error('API请求失败:', error);
+                // 不要显示alert，只记录错误
+                console.warn('无法连接到热点数据接口，使用备选数据');
                 // 使用缓存数据作为备选
                 if (gm_word_list.length > 0) {
                     search_words = gm_word_list;
@@ -83,7 +90,7 @@ function get_keywords_list(callback) {
                     if (callback) callback();
                 } else {
                     // 如果没有缓存，使用默认关键词
-                    search_words = ['新闻', '科技', '体育', '娱乐', '财经'];
+                    search_words = ['新闻', '科技', '体育', '娱乐', '财经', '汽车', '房产', '旅游', '教育', '健康'];
                     console.log('使用默认关键词');
                     if (callback) callback();
                 }
@@ -157,39 +164,93 @@ function generateRandomString(length) {
 
 // 获取当前的积分数量
 function getRewardPoint() {
-    const element = document.querySelector('.points-container[data-tag="RewardsHeader.Counter"]');
+    try {
+        // 等待元素加载
+        const waitForElement = (selector, timeout = 5000) => {
+            return new Promise((resolve) => {
+                const element = document.querySelector(selector);
+                if (element) {
+                    resolve(element);
+                    return;
+                }
+                
+                const observer = new MutationObserver((mutations, obs) => {
+                    const element = document.querySelector(selector);
+                    if (element) {
+                        obs.disconnect();
+                        resolve(element);
+                    }
+                });
+                
+                observer.observe(document.body, {
+                    childList: true,
+                    subtree: true
+                });
+                
+                setTimeout(() => {
+                    observer.disconnect();
+                    resolve(null);
+                }, timeout);
+            });
+        };
+        
+        const element = document.querySelector('.points-container[data-tag="RewardsHeader.Counter"]');
 
-    if (!element) {
-        console.warn('未找到积分容器元素 .points-container[data-tag="RewardsHeader.Counter"]');
-        // 作为备选，尝试只使用 class
-        const fallbackElement = document.querySelector('.points-container');
-        if (!fallbackElement) {
-            console.warn('备选选择器 .points-container 也未找到');
+        if (!element) {
+            console.warn('未找到积分容器元素 .points-container[data-tag="RewardsHeader.Counter"]');
+            
+            // 尝试更多备选选择器
+            const selectors = [
+                '.points-container',
+                '[data-tag*="RewardsHeader"]',
+                '.rewards-points',
+                '.point-count',
+                '.points',
+                '#id_rc .points'
+            ];
+            
+            let fallbackElement = null;
+            for (const selector of selectors) {
+                fallbackElement = document.querySelector(selector);
+                if (fallbackElement && fallbackElement.textContent.trim()) {
+                    console.log(`使用备选选择器: ${selector}`);
+                    break;
+                }
+            }
+            
+            if (!fallbackElement) {
+                console.warn('所有备选选择器都未找到有效元素');
+                return -1;
+            }
+            
+            const fallbackText = fallbackElement.textContent.trim();
+            const fallbackNum = parseInt(fallbackText.replace(/[^\d]/g, ''), 10);
+            if (!isNaN(fallbackNum)) {
+                console.log(`备选方式解析得到积分: ${fallbackNum}`);
+                return fallbackNum;
+            }
             return -1;
         }
-        console.log('使用备选选择器 .points-container');
-        const fallbackText = fallbackElement.textContent.trim();
-        const fallbackNum = parseInt(fallbackText, 10);
-        if (!isNaN(fallbackNum)) {
-            console.log(`备选方式解析得到积分: ${fallbackNum}`);
-            return fallbackNum;
+
+        const text = element.textContent.trim();
+        console.log(`积分元素文本内容: "${text}"`);
+
+        // 更强健的数字解析，只提取数字字符
+        const cleanText = text.replace(/[^\d]/g, '');
+        const num = parseInt(cleanText, 10);
+
+        if (isNaN(num)) {
+            console.warn(`无法将 "${text}" 转换为整数`);
+            return -1;
         }
+
+        console.log(`解析得到积分: ${num}`);
+        return num;
+        
+    } catch (error) {
+        console.error('获取积分时发生错误:', error);
         return -1;
     }
-
-    const text = element.textContent.trim();
-    console.log(`积分元素文本内容: "${text}"`);
-
-    // 解析数字，去除可能的空白字符
-    const num = parseInt(text.replace(/\s+/g, ''), 10);
-
-    if (isNaN(num)) {
-        console.warn(`无法将 "${text}" 转换为整数`);
-        return -1;
-    }
-
-    console.log(`解析得到积分: ${num}`);
-    return num;
 }
 
 function generateSleepMap(n){
@@ -228,25 +289,69 @@ function createFloatDiv() {
 // 更新悬浮窗内容
 function updateFloatDiv(mode, currentIndex, maxRewards, sleepTime, earnedPoints) {
     let parentDiv = createFloatDiv();
-    parentDiv.innerHTML = `
-        <div style="font-weight: bold; margin-bottom: 8px; color: #4CAF50;">🎯 Bing Rewards 自动脚本</div>
-        <div style="display: flex; justify-content: space-between;">
-            <span>📊 模式:</span>
-            <span style="color: #FFD700;">${mode}</span>
-        </div>
-        <div style="display: flex; justify-content: space-between;">
-            <span>📈 进度:</span>
-            <span style="color: #87CEEB;">${currentIndex} / ${maxRewards}</span>
-        </div>
-        <div style="display: flex; justify-content: space-between;">
-            <span>⏰ 休眠:</span>
-            <span style="color: #FFA500;">${sleepTime}</span>
-        </div>
-        <div style="display: flex; justify-content: space-between;">
-            <span>💰 已获得:</span>
-            <span style="color: #90EE90;">${earnedPoints || 0} 分</span>
-        </div>
-    `;
+    
+    // Clear existing content safely
+    while (parentDiv.firstChild) {
+        parentDiv.removeChild(parentDiv.firstChild);
+    }
+    
+    // Create elements safely without innerHTML
+    const titleDiv = document.createElement('div');
+    titleDiv.style.fontWeight = 'bold';
+    titleDiv.style.marginBottom = '8px';
+    titleDiv.style.color = '#4CAF50';
+    titleDiv.textContent = '🎯 Bing Rewards 自动脚本';
+    
+    const modeDiv = document.createElement('div');
+    modeDiv.style.display = 'flex';
+    modeDiv.style.justifyContent = 'space-between';
+    const modeLabel = document.createElement('span');
+    modeLabel.textContent = '📊 模式:';
+    const modeValue = document.createElement('span');
+    modeValue.style.color = '#FFD700';
+    modeValue.textContent = mode;
+    modeDiv.appendChild(modeLabel);
+    modeDiv.appendChild(modeValue);
+    
+    const progressDiv = document.createElement('div');
+    progressDiv.style.display = 'flex';
+    progressDiv.style.justifyContent = 'space-between';
+    const progressLabel = document.createElement('span');
+    progressLabel.textContent = '📈 进度:';
+    const progressValue = document.createElement('span');
+    progressValue.style.color = '#87CEEB';
+    progressValue.textContent = `${currentIndex} / ${maxRewards}`;
+    progressDiv.appendChild(progressLabel);
+    progressDiv.appendChild(progressValue);
+    
+    const sleepDiv = document.createElement('div');
+    sleepDiv.style.display = 'flex';
+    sleepDiv.style.justifyContent = 'space-between';
+    const sleepLabel = document.createElement('span');
+    sleepLabel.textContent = '⏰ 休眠:';
+    const sleepValue = document.createElement('span');
+    sleepValue.style.color = '#FFA500';
+    sleepValue.textContent = sleepTime;
+    sleepDiv.appendChild(sleepLabel);
+    sleepDiv.appendChild(sleepValue);
+    
+    const pointsDiv = document.createElement('div');
+    pointsDiv.style.display = 'flex';
+    pointsDiv.style.justifyContent = 'space-between';
+    const pointsLabel = document.createElement('span');
+    pointsLabel.textContent = '💰 已获得:';
+    const pointsValue = document.createElement('span');
+    pointsValue.style.color = '#90EE90';
+    pointsValue.textContent = `${earnedPoints || 0} 分`;
+    pointsDiv.appendChild(pointsLabel);
+    pointsDiv.appendChild(pointsValue);
+    
+    // Append all elements
+    parentDiv.appendChild(titleDiv);
+    parentDiv.appendChild(modeDiv);
+    parentDiv.appendChild(progressDiv);
+    parentDiv.appendChild(sleepDiv);
+    parentDiv.appendChild(pointsDiv);
 }
 
 function exec(){
@@ -276,23 +381,48 @@ function exec(){
     updateFloatDiv(modeText, currentIndex, maxRewardsForMode, '初始化中...', 0);
     
     // 延迟获取当前积分，确保页面加载完成
-    setTimeout(function() {
-        let current_reward_point = getRewardPoint();
-        
-        // 如果没有有效的初始积分，或者初始积分为null，则重新设置
-        if (!init_reward_point || init_reward_point === null || init_reward_point === -1) {
-            init_reward_point = current_reward_point;
-            GM_setValue('initRewardPoint', init_reward_point);
-            console.log(`重新设置初始分值为：${init_reward_point}`);
-        }
-        
-        let diff = current_reward_point - init_reward_point;
-        console.log(`初始分值为：${init_reward_point}， 当前分值为：${current_reward_point}，当前已挣得${diff};`);
+    const initializePoints = () => {
+        return new Promise((resolve) => {
+            let attempts = 0;
+            const maxAttempts = 10;
+            const attemptInterval = 1000;
+            
+            const tryGetPoints = () => {
+                attempts++;
+                let current_reward_point = getRewardPoint();
+                
+                if (current_reward_point !== -1) {
+                    // 如果没有有效的初始积分，或者初始积分为null，则重新设置
+                    if (!init_reward_point || init_reward_point === null || init_reward_point === -1) {
+                        init_reward_point = current_reward_point;
+                        GM_setValue('initRewardPoint', init_reward_point);
+                        console.log(`重新设置初始分值为：${init_reward_point}`);
+                    }
+                    
+                    let diff = current_reward_point - init_reward_point;
+                    if (diff < 0) diff = 0;
+                    console.log(`初始分值为：${init_reward_point}， 当前分值为：${current_reward_point}，当前已挣得${diff};`);
 
-        // 更新悬浮窗显示获得的积分
-        let sleepTimeText = currentIndex === 0 ? '准备开始...' : document.querySelector('#rewards-float-div span[style*="#FFA500"]')?.textContent || '未知';
-        updateFloatDiv(modeText, currentIndex, maxRewardsForMode, sleepTimeText, diff);
-    }, 2000);
+                    // 更新悬浮窗显示获得的积分
+                    let sleepTimeText = currentIndex === 0 ? '准备开始...' : '初始化完成';
+                    updateFloatDiv(modeText, currentIndex, maxRewardsForMode, sleepTimeText, diff);
+                    resolve();
+                } else if (attempts < maxAttempts) {
+                    console.log(`第 ${attempts} 次尝试获取积分失败，${attemptInterval}ms 后重试`);
+                    setTimeout(tryGetPoints, attemptInterval);
+                } else {
+                    console.warn('多次尝试后仍无法获取积分，继续执行');
+                    let sleepTimeText = currentIndex === 0 ? '准备开始...' : '积分获取失败';
+                    updateFloatDiv(modeText, currentIndex, maxRewardsForMode, sleepTimeText, 0);
+                    resolve();
+                }
+            };
+            
+            tryGetPoints();
+        });
+    };
+    
+    initializePoints();
 
     function commonProcess(){
         if (currentIndex <= max_rewards){
