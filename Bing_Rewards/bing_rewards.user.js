@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bing Rewards每日脚本
 // @namespace    http://tampermonkey.net/
-// @version      2.10
+// @version      2.11
 // @description  获取自建热词接口并进行搜索
 // @author       ぶりん
 // @match        https://*.bing.com/*
