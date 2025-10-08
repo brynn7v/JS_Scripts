@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bing Rewards每日脚本
 // @namespace    http://tampermonkey.net/
-// @version      2.11
+// @version      2.15
 // @description  获取自建热词接口并进行搜索
 // @author       ぶりん
 // @match        https://*.bing.com/*
@@ -112,43 +112,83 @@ get_keywords_list(exec);
 
 // 注册右键菜单命令
 // 开始普通模式搜索
-let startMenu = GM_registerMenuCommand('Start', function(){
+let startMenu = GM_registerMenuCommand('Start', async function(){
     GM_setValue('currentIndex', 0);
     GM_setValue('cd', 0); // 确保清除CD标志
     // 清除之前的初始积分缓存，强制重新获取
     GM_setValue('initRewardPoint', null);
-    let init_reward_point = getRewardPoint();
-    if(init_reward_point !== -1){
-        GM_setValue('initRewardPoint', init_reward_point);
-        console.log('Start - 重新设置初始分值为：', init_reward_point)
-    } else {
-        console.log('Start - 无法获取当前积分，将在页面加载后重新尝试');
+    try {
+        let init_reward_point = await getRewardPoint();
+        if(init_reward_point !== -1){
+            GM_setValue('initRewardPoint', init_reward_point);
+            console.log('Start - 重新设置初始分值为：', init_reward_point)
+        } else {
+            console.log('Start - 无法获取当前积分，将在页面加载后重新尝试');
+        }
+    } catch (error) {
+        console.error('Start - 获取积分时发生错误:', error);
     }
     location.href = 'https://www.bing.com/?br_msg=Please-Wait';
 }, 'o');
 
 // 开始CD模式搜索（间隔更长时间）
-let startCDMenu = GM_registerMenuCommand('Start_CD', function(){
+let startCDMenu = GM_registerMenuCommand('Start_CD', async function(){
     GM_setValue('currentIndex', 0);
     GM_setValue('cd', 1);
     // 清除之前的初始积分缓存，强制重新获取
     GM_setValue('initRewardPoint', null);
-    let init_reward_point = getRewardPoint();
-    if(init_reward_point !== -1){
-        GM_setValue('initRewardPoint', init_reward_point);
-        console.log('Start_CD - 重新设置初始分值为：', init_reward_point)
-    } else {
-        console.log('Start_CD - 无法获取当前积分，将在页面加载后重新尝试');
+    try {
+        let init_reward_point = await getRewardPoint();
+        if(init_reward_point !== -1){
+            GM_setValue('initRewardPoint', init_reward_point);
+            console.log('Start_CD - 重新设置初始分值为：', init_reward_point)
+        } else {
+            console.log('Start_CD - 无法获取当前积分，将在页面加载后重新尝试');
+        }
+    } catch (error) {
+        console.error('Start_CD - 获取积分时发生错误:', error);
     }
     location.href = 'https://www.bing.com/?br_msg=Please-Wait';
 }, 'c');
 
 // 停止搜索
 let stopMenu = GM_registerMenuCommand('Stop', function(){
+    GM_setValue('currentIndex', 999); // 设置为一个远大于max_rewards的值来确保停止
+    GM_setValue('cd', 0);
+    GM_setValue('word_list', null);
+    GM_setValue('initRewardPoint', null); // 清除初始积分缓存
+    console.log('Stop - 脚本已停止，清除所有缓存');
+}, 'x');
+
+// 完全重置所有状态
+let resetMenu = GM_registerMenuCommand('Reset', function(){
     GM_setValue('currentIndex', max_rewards);
     GM_setValue('cd', 0);
     GM_setValue('word_list', null);
-}, 'x');
+    GM_setValue('initRewardPoint', null);
+    console.log('Reset - 所有状态已重置');
+    alert('脚本状态已完全重置！');
+}, 'r');
+
+// 查看当前状态
+let statusMenu = GM_registerMenuCommand('Status', function(){
+    let currentIndex = GM_getValue('currentIndex');
+    let cdFlag = GM_getValue('cd');
+    let initRewardPoint = GM_getValue('initRewardPoint');
+    let wordList = GM_getValue('word_list');
+    
+    let status = `当前脚本状态：
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 当前进度: ${currentIndex || 0}
+🔄 模式: ${cdFlag ? 'CD模式' : '普通模式'}
+💰 初始积分: ${initRewardPoint || '未设置'}
+📝 热词缓存: ${wordList ? '有缓存' : '无缓存'}
+🎯 最大搜索次数: ${max_rewards}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+    
+    console.log(status);
+    alert(status);
+}, 's');
 
 // 生成随机字符串，用于模拟不同的搜索请求参数
 function generateRandomString(length) {
@@ -162,9 +202,53 @@ function generateRandomString(length) {
     return result;
 }
 
-// 获取当前的积分数量
-function getRewardPoint() {
+// 获取当前的积分数量（异步版本，等待滚动动画完成）
+async function getRewardPoint() {
     try {
+        // 等待积分滚动动画完成并获取稳定值
+        const waitForStablePoints = (element, maxAttempts = 10, stabilityDelay = 300) => {
+            return new Promise((resolve) => {
+                let attempts = 0;
+                let lastValue = null;
+                let stableCount = 0;
+                const requiredStableCount = 3; // 需要连续3次获取相同值才认为稳定
+                
+                const checkStability = () => {
+                    attempts++;
+                    const text = element.textContent.trim();
+                    const cleanText = text.replace(/[^\d]/g, '');
+                    const currentValue = parseInt(cleanText, 10);
+                    
+                    console.log(`积分检查第${attempts}次: "${text}" -> ${currentValue}`);
+                    
+                    if (currentValue === lastValue && !isNaN(currentValue)) {
+                        stableCount++;
+                        console.log(`积分值稳定计数: ${stableCount}/${requiredStableCount}`);
+                        
+                        if (stableCount >= requiredStableCount) {
+                            console.log(`积分值已稳定: ${currentValue}`);
+                            resolve(currentValue);
+                            return;
+                        }
+                    } else {
+                        stableCount = 0; // 重置稳定计数
+                    }
+                    
+                    lastValue = currentValue;
+                    
+                    if (attempts >= maxAttempts) {
+                        console.warn(`达到最大尝试次数，返回最后获取的值: ${currentValue}`);
+                        resolve(isNaN(currentValue) ? -1 : currentValue);
+                        return;
+                    }
+                    
+                    setTimeout(checkStability, stabilityDelay);
+                };
+                
+                checkStability();
+            });
+        };
+
         // 等待元素加载
         const waitForElement = (selector, timeout = 5000) => {
             return new Promise((resolve) => {
@@ -203,10 +287,6 @@ function getRewardPoint() {
             const selectors = [
                 '.points-container',
                 '[data-tag*="RewardsHeader"]',
-                '.rewards-points',
-                '.point-count',
-                '.points',
-                '#id_rc .points'
             ];
             
             let fallbackElement = null;
@@ -223,29 +303,12 @@ function getRewardPoint() {
                 return -1;
             }
             
-            const fallbackText = fallbackElement.textContent.trim();
-            const fallbackNum = parseInt(fallbackText.replace(/[^\d]/g, ''), 10);
-            if (!isNaN(fallbackNum)) {
-                console.log(`备选方式解析得到积分: ${fallbackNum}`);
-                return fallbackNum;
-            }
-            return -1;
+            // 对备选元素也使用稳定值检测
+            return await waitForStablePoints(fallbackElement);
         }
 
-        const text = element.textContent.trim();
-        console.log(`积分元素文本内容: "${text}"`);
-
-        // 更强健的数字解析，只提取数字字符
-        const cleanText = text.replace(/[^\d]/g, '');
-        const num = parseInt(cleanText, 10);
-
-        if (isNaN(num)) {
-            console.warn(`无法将 "${text}" 转换为整数`);
-            return -1;
-        }
-
-        console.log(`解析得到积分: ${num}`);
-        return num;
+        // 对主要元素使用稳定值检测
+        return await waitForStablePoints(element);
         
     } catch (error) {
         console.error('获取积分时发生错误:', error);
@@ -290,6 +353,24 @@ function createFloatDiv() {
 function updateFloatDiv(mode, currentIndex, maxRewards, sleepTime, earnedPoints) {
     let parentDiv = createFloatDiv();
     
+    // 获取之前的休眠时间值（如果存在）
+    let previousSleepTime = null;
+    const existingSleepElement = parentDiv.querySelector('.sleep-time');
+    if (existingSleepElement) {
+        previousSleepTime = existingSleepElement.textContent;
+    }
+    
+    // 如果没有提供新的睡眠时间或传入null，且存在之前的值，则使用之前的值
+    if ((sleepTime === null || sleepTime === undefined || sleepTime === '') && previousSleepTime) {
+        console.log(`继承之前的休眠时间: ${previousSleepTime}`);
+        sleepTime = previousSleepTime;
+    }
+    
+    // 如果仍然没有睡眠时间，设置默认值
+    if (!sleepTime) {
+        sleepTime = '等待中...';
+    }
+    
     // Clear existing content safely
     while (parentDiv.firstChild) {
         parentDiv.removeChild(parentDiv.firstChild);
@@ -331,6 +412,7 @@ function updateFloatDiv(mode, currentIndex, maxRewards, sleepTime, earnedPoints)
     sleepLabel.textContent = '⏰ 休眠:';
     const sleepValue = document.createElement('span');
     sleepValue.style.color = '#FFA500';
+    sleepValue.className = 'sleep-time';
     sleepValue.textContent = sleepTime;
     sleepDiv.appendChild(sleepLabel);
     sleepDiv.appendChild(sleepValue);
@@ -367,7 +449,16 @@ function exec(){
 
     let currentIndex = GM_getValue('currentIndex');
     let cdFlag = GM_getValue('cd') ? GM_getValue('cd') : 0;
-
+    
+    // 检查是否存在异常的currentIndex值
+    if (currentIndex > max_rewards + 10) { // 如果currentIndex异常大，可能是之前的bug或停止命令
+        console.warn(`检测到异常的currentIndex值: ${currentIndex}，可能是停止状态或异常，跳过执行`);
+        return;
+    }
+    
+    // 添加调试信息
+    console.log(`exec() 执行 - currentIndex: ${currentIndex}, cdFlag: ${cdFlag}, max_rewards: ${max_rewards}`);
+    
     function smoothScrollToBottom() {
         document.documentElement.scrollIntoView({ behavior: 'smooth', block: 'end' });
     };
@@ -378,6 +469,13 @@ function exec(){
     // 初始化悬浮窗
     let modeText = cdFlag ? 'CD模式' : '普通模式';
     let maxRewardsForMode = cdFlag ? (max_rewards - 5) : max_rewards;
+    
+    // 检查是否已经完成所有搜索
+    if (currentIndex > maxRewardsForMode) {
+        console.log('已完成所有搜索，停止执行');
+        updateFloatDiv(modeText, currentIndex, maxRewardsForMode, '已完成', 0);
+        return;
+    }
     updateFloatDiv(modeText, currentIndex, maxRewardsForMode, '初始化中...', 0);
     
     // 延迟获取当前积分，确保页面加载完成
@@ -387,11 +485,12 @@ function exec(){
             const maxAttempts = 10;
             const attemptInterval = 1000;
             
-            const tryGetPoints = () => {
+            const tryGetPoints = async () => {
                 attempts++;
-                let current_reward_point = getRewardPoint();
-                
-                if (current_reward_point !== -1) {
+                try {
+                    let current_reward_point = await getRewardPoint();
+                    
+                    if (current_reward_point !== -1) {
                     // 如果没有有效的初始积分，或者初始积分为null，则重新设置
                     if (!init_reward_point || init_reward_point === null || init_reward_point === -1) {
                         init_reward_point = current_reward_point;
@@ -403,18 +502,26 @@ function exec(){
                     if (diff < 0) diff = 0;
                     console.log(`初始分值为：${init_reward_point}， 当前分值为：${current_reward_point}，当前已挣得${diff};`);
 
-                    // 更新悬浮窗显示获得的积分
-                    let sleepTimeText = currentIndex === 0 ? '准备开始...' : '初始化完成';
-                    updateFloatDiv(modeText, currentIndex, maxRewardsForMode, sleepTimeText, diff);
-                    resolve();
-                } else if (attempts < maxAttempts) {
-                    console.log(`第 ${attempts} 次尝试获取积分失败，${attemptInterval}ms 后重试`);
-                    setTimeout(tryGetPoints, attemptInterval);
-                } else {
-                    console.warn('多次尝试后仍无法获取积分，继续执行');
-                    let sleepTimeText = currentIndex === 0 ? '准备开始...' : '积分获取失败';
-                    updateFloatDiv(modeText, currentIndex, maxRewardsForMode, sleepTimeText, 0);
-                    resolve();
+                        // 更新悬浮窗显示获得的积分
+                        let sleepTimeText = currentIndex === 0 ? '准备开始...' : null; // 非首次时继承之前的休眠时间
+                        updateFloatDiv(modeText, currentIndex, maxRewardsForMode, sleepTimeText, diff);
+                        resolve(init_reward_point);
+                    } else if (attempts < maxAttempts) {
+                        console.log(`第 ${attempts} 次尝试获取积分失败，${attemptInterval}ms 后重试`);
+                        setTimeout(tryGetPoints, attemptInterval);
+                    } else {
+                        console.warn('多次尝试后仍无法获取积分，继续执行');
+                        let sleepTimeText = currentIndex === 0 ? '准备开始...' : null; // 非首次时继承之前的休眠时间
+                        updateFloatDiv(modeText, currentIndex, maxRewardsForMode, sleepTimeText, 0);
+                        resolve(init_reward_point || 0);
+                    }
+                } catch (error) {
+                    console.error(`第 ${attempts} 次获取积分时发生错误:`, error);
+                    if (attempts < maxAttempts) {
+                        setTimeout(tryGetPoints, attemptInterval);
+                    } else {
+                        resolve(init_reward_point || 0);
+                    }
                 }
             };
             
@@ -422,16 +529,24 @@ function exec(){
         });
     };
     
-    initializePoints();
+    // 等待初始化完成后再执行主逻辑
+    initializePoints().then(async (initializedPoints) => {
+        // 更新init_reward_point到正确的值
+        init_reward_point = initializedPoints || init_reward_point || 0;
+        cdFlag ? await cdProcess() : await commonProcess();
+    });
+    
+    // 从这里返回，不再执行底部的逻辑
+    return;
 
-    function commonProcess(){
-        if (currentIndex <= max_rewards){
+    async function commonProcess(){
+        if (currentIndex < max_rewards){ // 改为 < 而不是 <=
             let tabTitle = document.getElementsByTagName("title")[0];
             smoothScrollToBottom();
             GM_setValue('currentIndex', currentIndex + 1);
 
             // 获取当前积分差值
-            let current_reward_point = getRewardPoint();
+            let current_reward_point = await getRewardPoint();
             let diff = current_reward_point - init_reward_point;
             if (diff < 0) diff = 0; // 防止负数
 
@@ -465,15 +580,15 @@ function exec(){
         }
     }
 
-    function cdProcess(){
+    async function cdProcess(){
         let max_rewards_cd = max_rewards - 5;
-        if(currentIndex <= max_rewards_cd){
+        if(currentIndex < max_rewards_cd){ // 改为 < 而不是 <=
             let tabTitle = document.getElementsByTagName("title")[0];
             smoothScrollToBottom();
             GM_setValue('currentIndex', currentIndex + 1);
             
             // 获取当前积分差值
-            let current_reward_point = getRewardPoint();
+            let current_reward_point = await getRewardPoint();
             let diff = current_reward_point - init_reward_point;
             if (diff < 0) diff = 0; // 防止负数
             
@@ -507,7 +622,5 @@ function exec(){
             GM_setValue('cd', 0);
         }
     }
-
-    cdFlag ? cdProcess() : commonProcess()
 
 }
